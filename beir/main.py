@@ -1,8 +1,9 @@
 from sentence_transformers import losses, SentenceTransformer
+from utils import InBatchTripletLoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
-from utils import TrainAndEvalRetriever
+from utils import FaissTrainAndEvalRetriever
 import pathlib
 import os
 import logging
@@ -56,7 +57,7 @@ if __name__ == '__main__':
     # Pretrained sentence-transformer model
     model = SentenceTransformer(args.model_name)
     # retriever = TrainRetriever(model=model, batch_size=args.batch_size)
-    retriever = TrainAndEvalRetriever(model=model, batch_size=args.batch_size)
+    retriever = FaissTrainAndEvalRetriever(model=model, batch_size=args.batch_size)
 
     # Prepare training samples
     if not args.hard_negative_sample:  # random hard negative
@@ -66,7 +67,8 @@ if __name__ == '__main__':
     train_dataloader = retriever.prepare_train(train_samples, shuffle=True)
 
     # Training with cosine-similarity
-    train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    # train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=0.7)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
