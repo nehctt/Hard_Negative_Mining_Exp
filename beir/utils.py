@@ -101,6 +101,8 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
                 # print(f'torch topk time: {time.time()-st}')
 
                 #Get top-k values by faiss
+                query_embeddings = torch.nn.functional.normalize(query_embeddings, p=2, dim=1)
+                sub_corpus_embeddings = torch.nn.functional.normalize(sub_corpus_embeddings, p=2, dim=1)
                 pair_scores_top_k_values, pair_scores_top_k_idx = self.faiss_topk(query_embeddings.cpu(), 
                                                                                   sub_corpus_embeddings.cpu(), 
                                                                                   max_k)
@@ -164,3 +166,25 @@ class InBatchTripletLoss(losses.TripletLoss):
 
         losses = F.relu(distance_pos - distance_neg + self.triplet_margin)
         return losses.mean()
+
+
+class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
+
+    def init(self, model, similarity_fct):
+        super().__init__(model, similarity_fct)
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)["sentence_embedding"] for sentence_feature in sentence_features]
+        embeddings_a = reps[0]  # B * dim (queries)
+        embeddings_b = torch.cat(reps[1:])  # B * dim (postives)
+        # create mixup pseudo negatives
+        embeddings_c = torch.cat([embeddings_b[1:], embeddings_b[0].unsqueeze(0)], dim=0)
+        alphas = torch.rand(embeddings_b.shape[0]).unsqueeze(-1).to(embeddings_b.device)
+        embeddings_c = alphas * embeddings_b + (1 - alphas) * embeddings_c
+        embeddings_b = torch.cat([embeddings_b, embeddings_c])
+
+        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        labels = torch.tensor(
+            range(len(scores)), dtype=torch.long, device=scores.device
+        )  # Example a[i] should match with b[i]
+        return self.cross_entropy_loss(scores, labels)
