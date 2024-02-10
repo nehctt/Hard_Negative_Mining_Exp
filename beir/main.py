@@ -19,6 +19,7 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", "-m", default="intfloat/e5-small", type=str)
     parser.add_argument("--epochs", "-e", default=1, type=int)
     parser.add_argument("--batch_size", "-bs", default=16, type=int)
+    parser.add_argument("--loss", "-l", default=None, type=str)
     args = parser.parse_args()
 
     # Print information
@@ -67,9 +68,12 @@ if __name__ == '__main__':
     train_dataloader = retriever.prepare_train(train_samples, shuffle=True)
 
     # Training with cosine-similarity
-    # train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    # train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
-    train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    if args.loss == 'triplet':
+        train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
+    elif args.loss == 'mixup':
+        train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    else:
+        train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
