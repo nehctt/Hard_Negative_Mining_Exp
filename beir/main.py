@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -72,6 +72,8 @@ if __name__ == '__main__':
         train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
     elif args.loss == 'mixup':
         train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    elif args.loss =='scl':
+        train_loss = SCL(model=retriever.model, similarity_fct=util.cos_sim, margin=0.4)
     else:
         train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
 

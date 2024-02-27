@@ -124,6 +124,11 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         for name in self.score_function_names:
             logger.info("Score-Function: {}".format(name))
             self.output_scores(scores[name])
+        # import IPython;IPython.embed(colors='linux');exit(1)
+        # with open('/tmp2/ttchen/meeting/hard_negative_exp/beir/ranking.tsv', 'w') as f:
+        #     for qid, qr in zip(self.queries_ids, queries_result_list['cos_sim']):
+        #         for rank, did_score_dict in enumerate(qr):
+        #             f.write(f'{qid}\t{did_score_dict["corpus_id"]}\t{rank+1}\t{did_score_dict["score"]}\n')
 
         return scores
 
@@ -187,4 +192,27 @@ class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
         labels = torch.tensor(
             range(len(scores)), dtype=torch.long, device=scores.device
         )  # Example a[i] should match with b[i]
+        return self.cross_entropy_loss(scores, labels)
+
+
+class SCL(losses.MultipleNegativesRankingLoss):
+
+    def init(self, model, similarity_fct, margin=0.4):
+        super().__init__(model, similarity_fct)
+        self.margin = margin
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
+        embeddings_a = reps[0]
+        embeddings_b = torch.cat(reps[1:])
+
+        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
+        
+        # add margin
+        margin = self.margin * self.scale
+        mask = scores < margin
+        mask.fill_diagonal_(False)
+        scores[mask] = 0
+
         return self.cross_entropy_loss(scores, labels)
