@@ -35,7 +35,7 @@ bm25.retriever.index(corpus)
 
 triplets = []
 qids = list(qrels) 
-hard_negatives_max = 10
+hard_negatives_max = 5
 
 #### Retrieve BM25 hard negatives => Given a positive document, find most similar lexical documents
 no_hits_count = 0
@@ -44,19 +44,27 @@ for idx in tqdm.tqdm(range(len(qids)), desc="Retrieve Hard Negatives using BM25"
     pos_docs = [doc_id for doc_id in qrels[query_id] if qrels[query_id][doc_id] > 0]
     pos_doc_texts = [corpus[doc_id]["title"] + " " + corpus[doc_id]["text"] for doc_id in pos_docs]
     try:
-        hits = bm25.retriever.es.lexical_multisearch(texts=pos_doc_texts, top_hits=hard_negatives_max+1)
+        hits = bm25.retriever.es.lexical_multisearch(texts=pos_doc_texts, top_hits=100)
         for (pos_text, hit) in zip(pos_doc_texts, hits):
+            hard_negative_count = 0
+            neg_ids =[]
             for (neg_id, _) in hit.get("hits"):
                 if neg_id not in pos_docs:
+                    neg_ids.append(neg_id)
+                    hard_negative_count += 1
+                if hard_negative_count == hard_negatives_max:
+                    break
+            if len(neg_ids) == 5:
+                for neg_id in neg_ids:
                     neg_text = corpus[neg_id]["title"] + " " + corpus[neg_id]["text"]
                     triplets.append((query_text, pos_text, neg_text))
     except:
         no_hits_count += 1
-print(f'There are {no_hits_count} queries has no BM25 results')
+print(f'There are {no_hits_count} sample has no BM25 results')
 print(f'There are total {len(triplets)} hard negative training triplets')
 
 ### Save training triplets
-with open('../../datasets/nfcorpus-hns/bm25.jsonl', 'w') as file:
+with open('../../datasets/nfcorpus-hns/bm25_5.jsonl', 'w') as file:
     for item in triplets:
         json.dump(item, file)
         file.write('\n')
