@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL, NegOnlyMultipleNegativesRankingLoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     retriever = FaissTrainAndEvalRetriever(model=model, batch_size=args.batch_size)
 
     # Prepare training samples
-    if not args.hard_negative_sample:  # random hard negative
+    if not args.hard_negative_sample:  # random negative
         train_samples = retriever.load_train(corpus, queries, qrels)
     else:  # load hard negative triplets: [(query, pos_text, hard_neg_text)]
         train_samples = retriever.load_train_triplets(triplets)
@@ -73,7 +73,10 @@ if __name__ == '__main__':
     elif args.loss == 'mixup':
         train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
     elif args.loss =='scl':
-        train_loss = SCL(model=retriever.model, similarity_fct=util.cos_sim, margin=0.4)
+        train_loss = SCL(model=retriever.model, similarity_fct=util.cos_sim, margin=0.3)
+    elif args.loss =='negonly':
+        train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
+        train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
     else:
         train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
 
