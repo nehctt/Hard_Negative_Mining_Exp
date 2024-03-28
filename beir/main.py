@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL, NegOnlyMultipleNegativesRankingLoss
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL, NegOnlyMultipleNegativesRankingLoss, BCELoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -20,6 +20,7 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", "-e", default=1, type=int)
     parser.add_argument("--batch_size", "-bs", default=16, type=int)
     parser.add_argument("--loss", "-l", default=None, type=str)
+    parser.add_argument("--scale", "-scale", default=20, type=float)
     args = parser.parse_args()
 
     # Print information
@@ -63,22 +64,25 @@ if __name__ == '__main__':
     # Prepare training samples
     if not args.hard_negative_sample:  # random negative
         train_samples = retriever.load_train(corpus, queries, qrels)
+        train_dataloader = retriever.prepare_train(train_samples, shuffle=True)
     else:  # load hard negative triplets: [(query, pos_text, hard_neg_text)]
         train_samples = retriever.load_train_triplets(triplets)
-    train_dataloader = retriever.prepare_train(train_samples, shuffle=True)
+        train_dataloader = retriever.prepare_train_triplets(train_samples)
 
     # Training with cosine-similarity
-    if args.loss == 'triplet':
+    if args.loss == 'triplet':  # broken
         train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
     elif args.loss == 'mixup':
         train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
     elif args.loss =='scl':
         train_loss = SCL(model=retriever.model, similarity_fct=util.cos_sim, margin=0.3)
-    elif args.loss =='negonly':
+    elif args.loss =='negonly':  # broken
         train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
         train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    elif args.loss == 'bce':  # broken
+        train_loss = BCELoss(model=retriever.model)
     else:
-        train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+        train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim, scale=args.scale)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
@@ -90,6 +94,7 @@ if __name__ == '__main__':
     # Configure Train params
     num_epochs = args.epochs
     evaluation_steps = 9999999  # never evaluate during an epoch
+    # evaluation_steps = 500
     warmup_steps = int(len(train_samples) * num_epochs / retriever.batch_size * 0.1)
 
     if num_epochs == 0:

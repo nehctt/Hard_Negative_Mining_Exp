@@ -61,8 +61,8 @@ class FaissTrainAndEvalRetriever(TrainRetriever):
 
 class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
 
-    def init(self, queries, corpus, relevant_docs, name):
-        super().__init__(queries, corpus, relevant_docs, name=name)
+    def init(self, queries, corpus, relevant_docs, corpus_chunk_size, name):
+        super().__init__(queries, corpus, relevant_docs, corpus_chunk_size, name)
 
     def compute_metrices(self, model, corpus_model=None, corpus_embeddings=None):
         if corpus_model is None:
@@ -214,7 +214,6 @@ class SCL(losses.MultipleNegativesRankingLoss):
         mask = scores < margin
         mask.fill_diagonal_(False)
         scores[mask] = 0
-
         return self.cross_entropy_loss(scores, labels)
 
 
@@ -228,12 +227,37 @@ class NegOnlyMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
         embeddings_a = reps[0]
         embeddings_b = torch.cat(reps[1:])
 
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        # scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        scores = self.similarity_fct(embeddings_a, embeddings_b)
         labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
         
-        # mask the pos_j for (q_i, pos_i, neg_i)
-        mask_rows, mask_cols = scores.shape[0], scores.shape[0]
-        non_diagonal_mask = torch.eye(mask_rows, device=scores.device)
-        scores[:mask_rows, :mask_cols] *= non_diagonal_mask
+        scores = scores[0, scores.shape[0]-1:].unsqueeze(dim=0) * self.scale
+        labels = labels[0].unsqueeze(dim=0)
+        # print(self.cross_entropy_loss(scores, labels))
+        # import IPython;IPython.embed(colors='linux');exit(1)
+        return self.cross_entropy_loss(scores, labels)
 
+
+class BCELoss(torch.nn.Module):
+
+    def __init__(self, model):
+        super(BCELoss, self).__init__()
+        self.model = model
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+        self.scale = 20.0
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
+        embeddings_q = reps[0]
+        embeddings_pos = reps[1]
+        embeddings_neg = reps[2]
+
+        q_norm = torch.nn.functional.normalize(embeddings_q, p=2, dim=1)
+        pos_norm = torch.nn.functional.normalize(embeddings_pos, p=2, dim=1)
+        neg_norm = torch.nn.functional.normalize(embeddings_neg, p=2, dim=1)
+
+        scores = torch.cat([(q_norm * pos_norm).sum(-1).unsqueeze(1),
+                            (q_norm * neg_norm).sum(-1).unsqueeze(1)], dim=1)  # [B, 2]
+        scores = scores * self.scale 
+        lebels = torch.tensor([0] * scores.shape[0], device=scores.device)
         return self.cross_entropy_loss(scores, labels)
