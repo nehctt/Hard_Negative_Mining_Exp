@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, SCL, NegOnlyMultipleNegativesRankingLoss, BCELoss
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -19,8 +19,9 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", "-m", default="intfloat/e5-small", type=str)
     parser.add_argument("--epochs", "-e", default=1, type=int)
     parser.add_argument("--batch_size", "-bs", default=16, type=int)
-    parser.add_argument("--loss", "-l", default=None, type=str)
+    parser.add_argument("--loss", "-l", default='infonce', type=str)
     parser.add_argument("--scale", "-scale", default=20, type=float)
+    parser.add_argument("--margin", "-margin", default=0, type=float)
     args = parser.parse_args()
 
     # Print information
@@ -74,15 +75,15 @@ if __name__ == '__main__':
         train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
     elif args.loss == 'mixup':
         train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss =='scl':
-        train_loss = SCL(model=retriever.model, similarity_fct=util.cos_sim, margin=0.3)
+    elif args.loss =='infonce' and args.margin==0:
+        train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim)
+    elif args.loss =='infonce' and args.margin:
+        train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim, margin=args.margin)
     elif args.loss =='negonly':  # broken
         train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
         train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss == 'bce':  # broken
+    elif args.loss == 'bce':
         train_loss = BCELoss(model=retriever.model)
-    else:
-        train_loss = losses.MultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim, scale=args.scale)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)

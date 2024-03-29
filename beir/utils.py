@@ -195,10 +195,10 @@ class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
         return self.cross_entropy_loss(scores, labels)
 
 
-class SCL(losses.MultipleNegativesRankingLoss):
+class InfoNCELoss(losses.MultipleNegativesRankingLoss):
 
-    def init(self, model, similarity_fct, margin=0.4):
-        super().__init__(model, similarity_fct)
+    def __init__(self, model, similarity_fct, margin=0):
+        super().__init__(model=model, similarity_fct=similarity_fct)
         self.margin = margin
 
     def forward(self, sentence_features, labels):
@@ -209,11 +209,12 @@ class SCL(losses.MultipleNegativesRankingLoss):
         scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
         labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
         
-        # add margin
-        margin = self.margin * self.scale
-        mask = scores < margin
-        mask.fill_diagonal_(False)
-        scores[mask] = 0
+        if self.margin > 0:
+            margin = self.margin * self.scale
+            mask = scores < margin
+            mask.fill_diagonal_(False)
+            scores[mask] = 0
+
         return self.cross_entropy_loss(scores, labels)
 
 
