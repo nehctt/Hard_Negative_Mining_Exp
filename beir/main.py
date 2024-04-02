@@ -82,20 +82,22 @@ if __name__ == '__main__':
     elif args.loss =='negonly':  # broken
         train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
         train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss == 'bce':
+    elif args.loss == 'bce' and args.margin==0:
         train_loss = BCELoss(model=retriever.model)
+    elif args.loss == 'bce' and args.margin:
+        train_loss = BCELoss(model=retriever.model, margin=args.margin)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
 
     # Provide model save path
-    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}epochs-{}".format(args.model_name, args.epochs, args.test_dataset))
+    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}-{}{}-{}epochs".format("e5-small", args.test_dataset, args.loss, args.margin, args.epochs))
     os.makedirs(model_save_path, exist_ok=True)
 
     # Configure Train params
     num_epochs = args.epochs
     evaluation_steps = 9999999  # never evaluate during an epoch
-    # evaluation_steps = 500
+    evaluation_steps = 5000
     warmup_steps = int(len(train_samples) * num_epochs / retriever.batch_size * 0.1)
 
     if num_epochs == 0:

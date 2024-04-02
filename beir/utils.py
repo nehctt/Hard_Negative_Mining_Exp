@@ -241,9 +241,10 @@ class NegOnlyMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
 
 class BCELoss(torch.nn.Module):
 
-    def __init__(self, model):
+    def __init__(self, model, margin=0):
         super(BCELoss, self).__init__()
         self.model = model
+        self.margin = margin
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
         self.scale = 20.0
 
@@ -261,4 +262,11 @@ class BCELoss(torch.nn.Module):
                             (q_norm * neg_norm).sum(-1).unsqueeze(1)], dim=1)  # [B, 2]
         scores = scores * self.scale 
         lebels = torch.tensor([0] * scores.shape[0], device=scores.device)
+
+        if self.margin > 0:
+            margin = self.margin * self.scale
+            mask = scores < margin
+            mask[:,0] = False
+            scores[mask] = 0
+
         return self.cross_entropy_loss(scores, labels)
