@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss, DCLLoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -86,6 +86,8 @@ if __name__ == '__main__':
         train_loss = BCELoss(model=retriever.model)
     elif args.loss == 'bce' and args.margin:
         train_loss = BCELoss(model=retriever.model, margin=args.margin)
+    elif args.loss == 'dcl':
+        train_loss = DCLLoss(model=retriever.model, similarity_fct=util.cos_sim)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
@@ -97,7 +99,7 @@ if __name__ == '__main__':
     # Configure Train params
     num_epochs = args.epochs
     evaluation_steps = 9999999  # never evaluate during an epoch
-    evaluation_steps = 5000
+    evaluation_steps = 10000
     warmup_steps = int(len(train_samples) * num_epochs / retriever.batch_size * 0.1)
 
     if num_epochs == 0:

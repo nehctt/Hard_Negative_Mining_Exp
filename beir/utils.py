@@ -64,7 +64,8 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
     def init(self, queries, corpus, relevant_docs, corpus_chunk_size, name):
         super().__init__(queries, corpus, relevant_docs, corpus_chunk_size, name)
 
-    def compute_metrices(self, model, corpus_model=None, corpus_embeddings=None):
+    # add epoch parameter in __call__()
+    def compute_metrices(self, model, epoch, corpus_model=None, corpus_embeddings=None):
         if corpus_model is None:
             corpus_model = model
 
@@ -129,6 +130,14 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         #     for qid, qr in zip(self.queries_ids, queries_result_list['cos_sim']):
         #         for rank, did_score_dict in enumerate(qr):
         #             f.write(f'{qid}\t{did_score_dict["corpus_id"]}\t{rank+1}\t{did_score_dict["score"]}\n')
+        # with open(f'/tmp2/ttchen/meeting/hard_negative_exp/beir/cos_score/dcl/epoch{epoch}_all_qd_cos_score.tsv', 'w') as f:
+        #     cosine_scores = query_embeddings @ sub_corpus_embeddings.T  # [len(queries), len(corpus)]
+        #     for i in range(cosine_scores.shape[0]):
+        #         for j in range(cosine_scores.shape[1]):
+        #             if self.corpus_ids[j] in self.relevant_docs[self.queries_ids[i]]:
+        #                 f.write(f'{self.queries_ids[i]}\t{self.corpus_ids[j]}\t{cosine_scores[i][j].item()}\t1\n')
+        #             else:
+        #                 f.write(f'{self.queries_ids[i]}\t{self.corpus_ids[j]}\t{cosine_scores[i][j].item()}\t0\n')
 
         return scores
 
@@ -214,7 +223,6 @@ class InfoNCELoss(losses.MultipleNegativesRankingLoss):
             mask = scores < margin
             mask.fill_diagonal_(False)
             scores[mask] = 0
-
         return self.cross_entropy_loss(scores, labels)
 
 
@@ -268,5 +276,30 @@ class BCELoss(torch.nn.Module):
             mask = scores < margin
             mask[:,0] = False
             scores[mask] = 0
-
         return self.cross_entropy_loss(scores, labels)
+
+
+class DCLLoss(torch.nn.Module):
+
+    def __init__(self, model, similarity_fct, margin=0):
+        super(DCLLoss, self).__init__()
+        self.model = model
+        self.similarity_fct=similarity_fct
+        self.margin = margin
+        self.scale = 20.0
+
+    def dcl(self, scores):
+        exp_scores = torch.exp(scores)
+        positive = torch.diag(exp_scores)  # [B]
+        
+        diag_mask = torch.eye(scores.shape[0], scores.shape[1]).bool().to(scores.device)
+        negative = torch.masked_select(exp_scores, ~diag_mask).view(scores.shape[0], scores.shape[1]-1)  # [B, 2B-1]
+        return (-1) * torch.log(positive / negative.sum(dim=1)).mean()
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
+        embeddings_a = reps[0]
+        embeddings_b = torch.cat(reps[1:])
+
+        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        return self.dcl(scores)
