@@ -56,7 +56,11 @@ class FaissTrainAndEvalRetriever(TrainRetriever):
             corpus = new_corpus
 
         logger.info("{} set contains {} documents and {} queries".format(name, len(corpus), len(queries)))
-        return FaissInformationRetrievalEvaluator(queries, corpus, rel_docs, corpus_chunk_size=len(corpus), name=name)
+        if len(corpus) >= 100000:
+            corpus_chunk_size = 100000
+        else:
+            corpus_chunk_size = len(corpus)
+        return FaissInformationRetrievalEvaluator(queries, corpus, rel_docs, corpus_chunk_size=corpus_chunk_size, name=name)
 
 
 class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
@@ -73,7 +77,7 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
 
         # Compute embedding for the queries
         query_embeddings = model.encode(self.queries, show_progress_bar=self.show_progress_bar, batch_size=self.batch_size, convert_to_tensor=True)
-        print(f'query embedding shape: {query_embeddings.shape}')
+        # print(f'query embedding shape: {query_embeddings.shape}')
 
         queries_result_list = {}
         for name in self.score_functions:
@@ -85,8 +89,8 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
 
             #Encode chunk of corpus
             if corpus_embeddings is None:
-                sub_corpus_embeddings = corpus_model.encode(self.corpus[corpus_start_idx:corpus_end_idx], show_progress_bar=True, batch_size=self.batch_size, convert_to_tensor=True)
-                print(f'corpus embedding shape: {sub_corpus_embeddings.shape}')
+                sub_corpus_embeddings = corpus_model.encode(self.corpus[corpus_start_idx:corpus_end_idx], show_progress_bar=self.show_progress_bar, batch_size=self.batch_size, convert_to_tensor=True)
+                # print(f'corpus embedding shape: {sub_corpus_embeddings.shape}')
             else:
                 sub_corpus_embeddings = corpus_embeddings[corpus_start_idx:corpus_end_idx]
 
@@ -126,11 +130,11 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
             logger.info("Score-Function: {}".format(name))
             self.output_scores(scores[name])
         # import IPython;IPython.embed(colors='linux');exit(1)
-        # with open('/tmp2/ttchen/meeting/hard_negative_exp/beir/ranking.tsv', 'w') as f:
+        # with open('/tmp2/ttchen/meeting/hard_negative_exp/beir/evalai/nfcorpus.txt', 'w') as f:
         #     for qid, qr in zip(self.queries_ids, queries_result_list['cos_sim']):
         #         for rank, did_score_dict in enumerate(qr):
-        #             f.write(f'{qid}\t{did_score_dict["corpus_id"]}\t{rank+1}\t{did_score_dict["score"]}\n')
-        # with open(f'/tmp2/ttchen/meeting/hard_negative_exp/beir/cos_score/dcl/epoch{epoch}_all_qd_cos_score.tsv', 'w') as f:
+        #             f.write(f'{qid} Q0 {did_score_dict["corpus_id"]} {rank+1} {did_score_dict["score"]} e5small\n')
+        # with open(f'/tmp2/ttchen/meeting/hard_negative_exp/beir/cos_score/scifact/infonce/epoch{epoch}_all_qd_cos_score.tsv', 'w') as f:
         #     cosine_scores = query_embeddings @ sub_corpus_embeddings.T  # [len(queries), len(corpus)]
         #     for i in range(cosine_scores.shape[0]):
         #         for j in range(cosine_scores.shape[1]):
@@ -147,7 +151,7 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         index = faiss.IndexFlatIP(len(query_embeddings[0]))  # dimension of embedding
         index.add(sub_corpus_embeddings)
         distance, idx = index.search(query_embeddings, min(k, len(sub_corpus_embeddings)))
-        print(f'faiss search time: {time.time()-st}')
+        # print(f'faiss search time: {time.time()-st}')
         return distance, idx
 
 
@@ -223,6 +227,30 @@ class InfoNCELoss(losses.MultipleNegativesRankingLoss):
             mask = scores < margin
             mask.fill_diagonal_(False)
             scores[mask] = 0
+        return self.cross_entropy_loss(scores, labels)
+
+
+class InfoNCEDynamicMarginLoss(losses.MultipleNegativesRankingLoss):
+
+    def __init__(self, model, similarity_fct):
+        super().__init__(model=model, similarity_fct=similarity_fct)
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
+        embeddings_a = reps[0]
+        embeddings_b = torch.cat(reps[1:])
+
+        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
+        
+        for i in range(len(scores)):
+            pos_mean = scores[i][i]
+            neg_mean = (scores[i].sum() - pos_mean) / (scores.shape[1] - 1)
+            margin = (pos_mean + neg_mean) / 2
+            mask = scores[i] < margin
+            mask[i] = False
+            scores[i][mask] = 0
+            # import IPython;IPython.embed(colors='linux');exit(1)
         return self.cross_entropy_loss(scores, labels)
 
 

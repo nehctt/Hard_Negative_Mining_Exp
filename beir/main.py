@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss, DCLLoss
+from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss, DCLLoss, InfoNCEDynamicMarginLoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -79,6 +79,8 @@ if __name__ == '__main__':
         train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim)
     elif args.loss =='infonce' and args.margin:
         train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim, margin=args.margin)
+    elif args.loss =='infoncedm':
+        train_loss = InfoNCEDynamicMarginLoss(model=retriever.model, similarity_fct=util.cos_sim)
     elif args.loss =='negonly':  # broken
         train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
         train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
@@ -93,7 +95,7 @@ if __name__ == '__main__':
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
 
     # Provide model save path
-    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}-{}{}-{}epochs".format("e5-small", args.test_dataset, args.loss, args.margin, args.epochs))
+    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}-{}{}-{}epochs".format(args.model_name.replace("/","-"), args.test_dataset, args.loss, args.margin, args.epochs))
     os.makedirs(model_save_path, exist_ok=True)
 
     # Configure Train params
