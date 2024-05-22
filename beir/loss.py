@@ -3,28 +3,6 @@ import torch
 import torch.nn.functional as F
 
 
-class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
-
-    def init(self, model, similarity_fct):
-        super().__init__(model, similarity_fct)
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)["sentence_embedding"] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]  # B * dim (queries)
-        embeddings_b = torch.cat(reps[1:])  # B * dim (postives)
-        # create mixup pseudo negatives
-        embeddings_c = torch.cat([embeddings_b[1:], embeddings_b[0].unsqueeze(0)], dim=0)
-        alphas = torch.rand(embeddings_b.shape[0]).unsqueeze(-1).to(embeddings_b.device)
-        embeddings_c = alphas * embeddings_b + (1 - alphas) * embeddings_c
-        embeddings_b = torch.cat([embeddings_b, embeddings_c])
-
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        labels = torch.tensor(
-            range(len(scores)), dtype=torch.long, device=scores.device
-        )  # Example a[i] should match with b[i]
-        return self.cross_entropy_loss(scores, labels)
-
-
 class InfoNCELoss(losses.MultipleNegativesRankingLoss):
 
     def __init__(self, model, similarity_fct):
@@ -95,6 +73,28 @@ class BCELoss(torch.nn.Module):
         scores = scores * self.scale 
         lebels = torch.tensor([0] * scores.shape[0], device=scores.device)
 
+        return self.cross_entropy_loss(scores, labels)
+
+
+class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
+
+    def __init__(self, model, similarity_fct):
+        super().__init__(model, similarity_fct)
+
+    def forward(self, sentence_features, labels):
+        reps = [self.model(sentence_feature)["sentence_embedding"] for sentence_feature in sentence_features]
+        embeddings_a = reps[0]  # B * dim (queries)
+        embeddings_b = torch.cat(reps[1:])  # B * dim (postives)
+        # create mixup pseudo negatives
+        embeddings_c = torch.cat([embeddings_b[1:], embeddings_b[0].unsqueeze(0)], dim=0)
+        alphas = torch.rand(embeddings_b.shape[0]).unsqueeze(-1).to(embeddings_b.device)
+        embeddings_c = alphas * embeddings_b + (1 - alphas) * embeddings_c
+        embeddings_b = torch.cat([embeddings_b, embeddings_c])
+
+        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
+        labels = torch.tensor(
+            range(len(scores)), dtype=torch.long, device=scores.device
+        )  # Example a[i] should match with b[i]
         return self.cross_entropy_loss(scores, labels)
 
 
