@@ -6,7 +6,7 @@ sleep 15
 curl -sX GET "localhost:9200/"
 
 # run bm25
-python elastic_bm25.py
+python elastic_bm25.py -trd hotpotqa
 
 # terminate elasticsearch
 pkill -F ~/elasticsearch-7.9.2/pid

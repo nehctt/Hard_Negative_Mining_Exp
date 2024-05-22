@@ -4,10 +4,17 @@ from beir.retrieval.search.lexical import BM25Search as BM25
 from beir.retrieval.evaluation import EvaluateRetrieval
 import tqdm
 import json
+import argparse
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--train_dataset", "-trd", default="nfcorpus", type=str)
+parser.add_argument("--num_negative_samples", "-n", default=5, type=int)
+args = parser.parse_args()
 
 
 #### Download nfcorpus.zip dataset and unzip the dataset
-dataset = "nfcorpus"
+dataset = args.train_dataset
 url = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{}.zip".format(dataset)
 out_dir = "../../datasets/"
 data_path = util.download_and_unzip(url, out_dir)
@@ -15,7 +22,7 @@ corpus, queries, qrels = GenericDataLoader(data_path).load(split="train")
 
 #### https://www.elastic.co/
 hostname = "localhost"
-index_name = "nfcorpus"
+index_name = args.train_dataset
 
 #### Intialize #### 
 # (1) True - Delete existing index and re-index all documents from scratch 
@@ -35,7 +42,7 @@ bm25.retriever.index(corpus)
 
 triplets = []
 qids = list(qrels) 
-hard_negatives_max = 5
+hard_negatives_max = args.num_negative_samples
 
 #### Retrieve BM25 hard negatives => Given a positive document, find most similar lexical documents
 no_hits_count = 0
@@ -64,7 +71,7 @@ print(f'There are {no_hits_count} sample has no BM25 results')
 print(f'There are total {len(triplets)} hard negative training triplets')
 
 ### Save training triplets
-with open('../../datasets/nfcorpus-hns/bm25_5.jsonl', 'w') as file:
+with open(f'../../datasets/{dataset}-hns/bm25_{hard_negatives_max}.jsonl', 'w') as file:
     for item in triplets:
         json.dump(item, file)
         file.write('\n')
