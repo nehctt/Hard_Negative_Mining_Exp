@@ -1,8 +1,6 @@
 from beir.retrieval.train import TrainRetriever
-from sentence_transformers import losses
 from sentence_transformers.evaluation import InformationRetrievalEvaluator
 import torch
-import torch.nn.functional as F
 import random
 from tqdm import tqdm, trange
 import time
@@ -83,29 +81,29 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         for name in self.score_functions:
             queries_result_list[name] = [[] for _ in range(len(query_embeddings))]
 
-        #Iterate over chunks of the corpus
+        # Iterate over chunks of the corpus
         for corpus_start_idx in trange(0, len(self.corpus), self.corpus_chunk_size, desc='Corpus Chunks', disable=self.show_progress_bar):
             corpus_end_idx = min(corpus_start_idx + self.corpus_chunk_size, len(self.corpus))
 
-            #Encode chunk of corpus
+            # Encode chunk of corpus
             if corpus_embeddings is None:
                 sub_corpus_embeddings = corpus_model.encode(self.corpus[corpus_start_idx:corpus_end_idx], show_progress_bar=self.show_progress_bar, batch_size=self.batch_size, convert_to_tensor=True)
                 # print(f'corpus embedding shape: {sub_corpus_embeddings.shape}')
             else:
                 sub_corpus_embeddings = corpus_embeddings[corpus_start_idx:corpus_end_idx]
 
-            #Compute cosine similarites
+            # Compute cosine similarites
             for name, score_function in self.score_functions.items():
-                # st = time.time()
+
+                # Get top-k values
                 # pair_scores = score_function(query_embeddings, sub_corpus_embeddings)
                 #
                 # #Get top-k values
                 # pair_scores_top_k_values, pair_scores_top_k_idx = torch.topk(pair_scores, min(max_k, len(pair_scores[0])), dim=1, largest=True, sorted=False)
                 # pair_scores_top_k_values = pair_scores_top_k_values.cpu().tolist()
                 # pair_scores_top_k_idx = pair_scores_top_k_idx.cpu().tolist()
-                # print(f'torch topk time: {time.time()-st}')
 
-                #Get top-k values by faiss
+                # Get top-k values by faiss
                 query_embeddings = torch.nn.functional.normalize(query_embeddings, p=2, dim=1)
                 sub_corpus_embeddings = torch.nn.functional.normalize(sub_corpus_embeddings, p=2, dim=1)
                 pair_scores_top_k_values, pair_scores_top_k_idx = self.faiss_topk(query_embeddings.cpu(), 
@@ -122,13 +120,15 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         logger.info("Queries: {}".format(len(self.queries)))
         logger.info("Corpus: {}\n".format(len(self.corpus)))
 
-        #Compute scores
+        # Compute scores
         scores = {name: self.compute_metrics(queries_result_list[name]) for name in self.score_functions}
 
-        #Output
+        # Output
         for name in self.score_function_names:
             logger.info("Score-Function: {}".format(name))
             self.output_scores(scores[name])
+
+        # save cosine score
         # import IPython;IPython.embed(colors='linux');exit(1)
         # with open('/tmp2/ttchen/meeting/hard_negative_exp/beir/evalai/nfcorpus.txt', 'w') as f:
         #     for qid, qr in zip(self.queries_ids, queries_result_list['cos_sim']):
@@ -146,188 +146,10 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         return scores
 
     def faiss_topk(self, query_embeddings, sub_corpus_embeddings, k):
-        st = time.time()
         import faiss
         index = faiss.IndexFlatIP(len(query_embeddings[0]))  # dimension of embedding
         index.add(sub_corpus_embeddings)
         distance, idx = index.search(query_embeddings, min(k, len(sub_corpus_embeddings)))
-        # print(f'faiss search time: {time.time()-st}')
         return distance, idx
 
 
-# class FaissTrainAndEvalRetriever(FaissTrainRetriever):
-#
-#     def init(self, model, batch_size):
-#         super().__init__(model, batch_size)
-#
-#     def evaluate(self, evaluator, output_path):
-#         self.model.evaluate(evaluator=evaluator, output_path=output_path)
-
-
-class InBatchTripletLoss(losses.TripletLoss):
-
-    def init(self, model, distance_metric, triplet_margin):
-        super().__init__(model, distance_metric, triplet_margin)
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-
-        if len(reps) > 2:  # (q_text, pos_text, neg_text)
-            rep_anchor, rep_pos, rep_neg = reps
-            distance_pos = self.distance_metric(rep_anchor, rep_pos)
-            distance_neg = self.distance_metric(rep_anchor, rep_neg)
-        else:  # (q_text, pos_text)
-            rep_anchor, rep_pos = reps
-            rep_neg = torch.cat([rep_pos[1:], rep_pos[0].unsqueeze(0)], dim=0)
-            distance_pos = self.distance_metric(rep_anchor, rep_pos)
-            distance_neg = self.distance_metric(rep_anchor, rep_neg)
-
-        losses = F.relu(distance_pos - distance_neg + self.triplet_margin)
-        return losses.mean()
-
-
-class MixupMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
-
-    def init(self, model, similarity_fct):
-        super().__init__(model, similarity_fct)
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)["sentence_embedding"] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]  # B * dim (queries)
-        embeddings_b = torch.cat(reps[1:])  # B * dim (postives)
-        # create mixup pseudo negatives
-        embeddings_c = torch.cat([embeddings_b[1:], embeddings_b[0].unsqueeze(0)], dim=0)
-        alphas = torch.rand(embeddings_b.shape[0]).unsqueeze(-1).to(embeddings_b.device)
-        embeddings_c = alphas * embeddings_b + (1 - alphas) * embeddings_c
-        embeddings_b = torch.cat([embeddings_b, embeddings_c])
-
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        labels = torch.tensor(
-            range(len(scores)), dtype=torch.long, device=scores.device
-        )  # Example a[i] should match with b[i]
-        return self.cross_entropy_loss(scores, labels)
-
-
-class InfoNCELoss(losses.MultipleNegativesRankingLoss):
-
-    def __init__(self, model, similarity_fct, margin=0):
-        super().__init__(model=model, similarity_fct=similarity_fct)
-        self.margin = margin
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]
-        embeddings_b = torch.cat(reps[1:])
-
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
-        
-        if self.margin > 0:
-            margin = self.margin * self.scale
-            mask = scores < margin
-            mask.fill_diagonal_(False)
-            scores[mask] = 0
-        return self.cross_entropy_loss(scores, labels)
-
-
-class InfoNCEDynamicMarginLoss(losses.MultipleNegativesRankingLoss):
-
-    def __init__(self, model, similarity_fct):
-        super().__init__(model=model, similarity_fct=similarity_fct)
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]
-        embeddings_b = torch.cat(reps[1:])
-
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
-        
-        for i in range(len(scores)):
-            pos_mean = scores[i][i]
-            neg_mean = (scores[i].sum() - pos_mean) / (scores.shape[1] - 1)
-            margin = (pos_mean + neg_mean) / 2
-            mask = scores[i] < margin
-            mask[i] = False
-            scores[i][mask] = 0
-            # import IPython;IPython.embed(colors='linux');exit(1)
-        return self.cross_entropy_loss(scores, labels)
-
-
-class NegOnlyMultipleNegativesRankingLoss(losses.MultipleNegativesRankingLoss):
-
-    def init(self, model, similarity_fct):
-        super().__init__(model, similarity_fct)
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]
-        embeddings_b = torch.cat(reps[1:])
-
-        # scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        scores = self.similarity_fct(embeddings_a, embeddings_b)
-        labels = torch.tensor(range(len(scores)), dtype=torch.long, device=scores.device)  # Example a[i] should match with b[i]
-        
-        scores = scores[0, scores.shape[0]-1:].unsqueeze(dim=0) * self.scale
-        labels = labels[0].unsqueeze(dim=0)
-        # print(self.cross_entropy_loss(scores, labels))
-        # import IPython;IPython.embed(colors='linux');exit(1)
-        return self.cross_entropy_loss(scores, labels)
-
-
-class BCELoss(torch.nn.Module):
-
-    def __init__(self, model, margin=0):
-        super(BCELoss, self).__init__()
-        self.model = model
-        self.margin = margin
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
-        self.scale = 20.0
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-        embeddings_q = reps[0]
-        embeddings_pos = reps[1]
-        embeddings_neg = reps[2]
-
-        q_norm = torch.nn.functional.normalize(embeddings_q, p=2, dim=1)
-        pos_norm = torch.nn.functional.normalize(embeddings_pos, p=2, dim=1)
-        neg_norm = torch.nn.functional.normalize(embeddings_neg, p=2, dim=1)
-
-        scores = torch.cat([(q_norm * pos_norm).sum(-1).unsqueeze(1),
-                            (q_norm * neg_norm).sum(-1).unsqueeze(1)], dim=1)  # [B, 2]
-        scores = scores * self.scale 
-        lebels = torch.tensor([0] * scores.shape[0], device=scores.device)
-
-        if self.margin > 0:
-            margin = self.margin * self.scale
-            mask = scores < margin
-            mask[:,0] = False
-            scores[mask] = 0
-        return self.cross_entropy_loss(scores, labels)
-
-
-class DCLLoss(torch.nn.Module):
-
-    def __init__(self, model, similarity_fct, margin=0):
-        super(DCLLoss, self).__init__()
-        self.model = model
-        self.similarity_fct=similarity_fct
-        self.margin = margin
-        self.scale = 20.0
-
-    def dcl(self, scores):
-        exp_scores = torch.exp(scores)
-        positive = torch.diag(exp_scores)  # [B]
-        
-        diag_mask = torch.eye(scores.shape[0], scores.shape[1]).bool().to(scores.device)
-        negative = torch.masked_select(exp_scores, ~diag_mask).view(scores.shape[0], scores.shape[1]-1)  # [B, 2B-1]
-        return (-1) * torch.log(positive / negative.sum(dim=1)).mean()
-
-    def forward(self, sentence_features, labels):
-        reps = [self.model(sentence_feature)['sentence_embedding'] for sentence_feature in sentence_features]
-        embeddings_a = reps[0]
-        embeddings_b = torch.cat(reps[1:])
-
-        scores = self.similarity_fct(embeddings_a, embeddings_b) * self.scale
-        return self.dcl(scores)

@@ -1,5 +1,5 @@
 from sentence_transformers import losses, SentenceTransformer
-from utils import InBatchTripletLoss, MixupMultipleNegativesRankingLoss, InfoNCELoss, NegOnlyMultipleNegativesRankingLoss, BCELoss, DCLLoss, InfoNCEDynamicMarginLoss
+from loss import MixupMultipleNegativesRankingLoss, InfoNCELoss, BCELoss, DCLLoss, InfoNCEDynamicMarginLoss
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
@@ -21,7 +21,6 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", "-bs", default=16, type=int)
     parser.add_argument("--loss", "-l", default='infonce', type=str)
     parser.add_argument("--scale", "-scale", default=20, type=float)
-    parser.add_argument("--margin", "-margin", default=0, type=float)
     args = parser.parse_args()
 
     # Print information
@@ -71,37 +70,28 @@ if __name__ == '__main__':
         train_dataloader = retriever.prepare_train_triplets(train_samples)
 
     # Training with cosine-similarity
-    if args.loss == 'triplet':  # broken
-        train_loss = InBatchTripletLoss(model=retriever.model, distance_metric=losses.TripletDistanceMetric.COSINE, triplet_margin=1)
-    elif args.loss == 'mixup':
-        train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss =='infonce' and args.margin==0:
+    if args.loss =='infonce':
         train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss =='infonce' and args.margin:
-        train_loss = InfoNCELoss(model=retriever.model, similarity_fct=util.cos_sim, margin=args.margin)
-    elif args.loss =='infoncedm':
+    if args.loss =='infoncedm':
         train_loss = InfoNCEDynamicMarginLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss =='negonly':  # broken
-        train_dataloader = retriever.prepare_train(train_samples, shuffle=False)
-        train_loss = NegOnlyMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
-    elif args.loss == 'bce' and args.margin==0:
+    if args.loss == 'bce':
         train_loss = BCELoss(model=retriever.model)
-    elif args.loss == 'bce' and args.margin:
-        train_loss = BCELoss(model=retriever.model, margin=args.margin)
-    elif args.loss == 'dcl':
+    if args.loss == 'mixup':
+        train_loss = MixupMultipleNegativesRankingLoss(model=retriever.model, similarity_fct=util.cos_sim)
+    if args.loss == 'dcl':
         train_loss = DCLLoss(model=retriever.model, similarity_fct=util.cos_sim)
 
     # Prepare dev evaluator
     ir_evaluator = retriever.load_ir_evaluator(dev_corpus, dev_queries, dev_qrels)
 
     # Provide model save path
-    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}-{}{}-{}epochs".format(args.model_name.replace("/","-"), args.test_dataset, args.loss, args.margin, args.epochs))
+    model_save_path = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", "{}-{}-{}-{}epochs".format(args.model_name.replace("/","-"), args.test_dataset, args.loss, args.epochs))
     os.makedirs(model_save_path, exist_ok=True)
 
     # Configure Train params
     num_epochs = args.epochs
     evaluation_steps = 9999999  # never evaluate during an epoch
-    evaluation_steps = 10000
+    # evaluation_steps = 10000
     warmup_steps = int(len(train_samples) * num_epochs / retriever.batch_size * 0.1)
 
     if num_epochs == 0:
