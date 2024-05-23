@@ -76,6 +76,24 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         self.accuracy_at_k = [5, 100]
         self.precision_recall_at_k = [5, 100]
 
+        self.csv_headers = ["epoch at"]
+        for score_name in self.score_function_names:
+            for k in self.accuracy_at_k:
+                self.csv_headers.append("{}-Accuracy@{}".format(score_name, k))
+
+            for k in self.precision_recall_at_k:
+                self.csv_headers.append("{}-Precision@{}".format(score_name, k))
+                self.csv_headers.append("{}-Recall@{}".format(score_name, k))
+
+            for k in self.mrr_at_k:
+                self.csv_headers.append("{}-MRR@{}".format(score_name, k))
+
+            for k in self.ndcg_at_k:
+                self.csv_headers.append("{}-NDCG@{}".format(score_name, k))
+
+            for k in self.map_at_k:
+                self.csv_headers.append("{}-MAP@{}".format(score_name, k))
+
         if epoch != -1:
             if steps == -1:
                 out_txt = f" after epoch {epoch}"
@@ -93,7 +111,8 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         # Write results to disc
         if output_path is not None and self.write_csv:
             csv_path = os.path.join(output_path, self.csv_file)
-            if not os.path.isfile(csv_path):
+            # if not os.path.isfile(csv_path):
+            if epoch == 0:
                 fOut = open(csv_path, mode="w", encoding="utf-8")
                 fOut.write(",".join(self.csv_headers))
                 fOut.write("\n")
@@ -101,7 +120,7 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
             else:
                 fOut = open(csv_path, mode="a", encoding="utf-8")
 
-            output_data = [epoch, steps]
+            output_data = [epoch]
             for name in self.score_function_names:
                 for k in self.accuracy_at_k:
                     output_data.append(scores[name]["accuracy@k"][k])
@@ -193,11 +212,8 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
             self.output_scores(scores[name])
 
         # save cosine score
+        # save embedding?
         # import IPython;IPython.embed(colors='linux');exit(1)
-        # with open('/tmp2/ttchen/meeting/hard_negative_exp/beir/evalai/nfcorpus.txt', 'w') as f:
-        #     for qid, qr in zip(self.queries_ids, queries_result_list['cos_sim']):
-        #         for rank, did_score_dict in enumerate(qr):
-        #             f.write(f'{qid} Q0 {did_score_dict["corpus_id"]} {rank+1} {did_score_dict["score"]} e5small\n')
         # with open(f'/tmp2/ttchen/meeting/hard_negative_exp/beir/cos_score/scifact/infonce/epoch{epoch}_all_qd_cos_score.tsv', 'w') as f:
         #     cosine_scores = query_embeddings @ sub_corpus_embeddings.T  # [len(queries), len(corpus)]
         #     for i in range(cosine_scores.shape[0]):

@@ -10,14 +10,26 @@ echo -e "\n\ntraining 1 epoch...\n"
 cd hard_negative_sampler/${sampler}/
 python ${sampler}.py -trd ${dataset} -m ${model}
 cd ../../
-python main.py -trd ${dataset}_train -ted ${dataset}_test -hns datasets/${dataset}-hns/${sampler}_5.jsonl -e 1 -m ${model} -l ${loss}
+python main.py \
+    -trd ${dataset}_train \
+    -ted ${dataset}_test \
+    -hns ${sampler} \
+    -m ${model} \
+    -e 1 \
+    -l ${loss}
 
 # train second~last epoch
 for ((i=2; i<=${num_epochs}; i++))
 do
     echo -e "\n\ntraining $i epoch...\n"
     cd hard_negative_sampler/${sampler}/
-    python ${sampler}.py -trd ${dataset} -m ../../output/${model//\//-}-${dataset}_test-${loss}0-1epochs/
+    python ${sampler}.py -trd ${dataset} -m ../../output/${dataset}_${sampler}5_${model//\//-}_${loss}_1epochs/
     cd ../../
-    python main.py -trd ${dataset}_train -ted ${dataset}_test -hns datasets/${dataset}-hns/${sampler}_5.jsonl -e 1 -m output/${model//\//-}-${dataset}_test-${loss}0-1epochs/ -l ${loss}
+    python main.py \
+        -trd ${dataset}_train \
+        -ted ${dataset}_test \
+        -hns ${sampler} \
+        -m output/${dataset}_${sampler}5_${model//\//-}_${loss}_1epochs/ \
+        -e 1 \
+        -l ${loss}
 done
