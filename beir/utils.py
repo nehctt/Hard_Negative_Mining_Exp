@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 class FaissTrainAndEvalRetriever(TrainRetriever):
 
+    def __init__(self, model, batch_size=16, save_corpus_emb=False):
+        super().__init__(model=model, batch_size=batch_size)
+        # if True, we save corpus embedding when evaluation
+        self.save_corpus_emb = save_corpus_emb
+
     def evaluate(self, evaluator, output_path):
         self.model.evaluate(evaluator=evaluator, output_path=output_path)
 
@@ -60,10 +65,15 @@ class FaissTrainAndEvalRetriever(TrainRetriever):
             corpus_chunk_size = 100000
         else:
             corpus_chunk_size = len(corpus)
-        return FaissInformationRetrievalEvaluator(queries, corpus, rel_docs, corpus_chunk_size=corpus_chunk_size, name=name)
+        return FaissInformationRetrievalEvaluator(queries, corpus, rel_docs, corpus_chunk_size=corpus_chunk_size, name=name, save_corpus_emb=self.save_corpus_emb)
 
 
 class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
+
+    def __init__(self, queries, corpus, relevant_docs, corpus_chunk_size, name = '', save_corpus_emb=False):
+        super().__init__(queries=queries, corpus=corpus, relevant_docs=relevant_docs, corpus_chunk_size=corpus_chunk_size, name=name)    
+        # if True, we save corpus embedding when evaluation
+        self.save_corpus_emb = save_corpus_emb
 
     def __call__(self, model, output_path=None, epoch=-1, steps=-1, *args, **kwargs):
 
@@ -101,7 +111,7 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
 
         logger.info(f"Information Retrieval Evaluation of the model on the {self.name} dataset{out_txt}:")
 
-        scores = self.compute_metrices(model, *args, **kwargs)
+        scores = self.compute_metrices(model, save_corpus_emb=self.save_corpus_emb, *args, **kwargs)
 
         # Write results to disc
         if output_path is not None and self.write_csv:
@@ -143,7 +153,7 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         else:
             return scores[self.main_score_function]["ndcg@k"][max(self.ndcg_at_k)]
 
-    def compute_metrices(self, model, corpus_model=None, corpus_embeddings=None):
+    def compute_metrices(self, model, save_corpus_emb=False, corpus_model=None, corpus_embeddings=None):
         if corpus_model is None:
             corpus_model = model
 
@@ -189,10 +199,23 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
                 pair_scores_top_k_values = pair_scores_top_k_values.tolist()
                 pair_scores_top_k_idx = pair_scores_top_k_idx.tolist()
 
+
                 for query_itr in range(len(query_embeddings)):
                     for sub_corpus_id, score in zip(pair_scores_top_k_idx[query_itr], pair_scores_top_k_values[query_itr]):
                         corpus_id = self.corpus_ids[corpus_start_idx+sub_corpus_id]
                         queries_result_list[name][query_itr].append({'corpus_id': corpus_id, 'score': score})
+
+            # Save corpus embedding
+            # import IPython;IPython.embed(colors='linux');exit(1)
+            if save_corpus_emb:
+                corpus_emb_path = './hard_negative_sampler/dynamic/ance/corpus_embeddings/corpus_embs.tsv'
+                if corpus_start_idx==0:
+                    f_corpus_emb = open(corpus_emb_path, 'w')
+                else:
+                    f_corpus_emb = open(corpus_emb_path, 'a')
+                for sub_corpus_id, emb in zip(self.corpus_ids[corpus_start_idx:corpus_end_idx], sub_corpus_embeddings):
+                    f_corpus_emb.write(f'{sub_corpus_id}\t{emb.tolist()}\n')
+
 
         logger.info("Queries: {}".format(len(self.queries)))
         logger.info("Corpus: {}\n".format(len(self.corpus)))
@@ -204,18 +227,6 @@ class FaissInformationRetrievalEvaluator(InformationRetrievalEvaluator):
         for name in self.score_function_names:
             logger.info("Score-Function: {}".format(name))
             self.output_scores(scores[name])
-
-        # save cosine score
-        # save embedding?
-        # import IPython;IPython.embed(colors='linux');exit(1)
-        # with open(f'/tmp2/ttchen/meeting/hard_negative_exp/beir/cos_score/scifact/infonce/epoch{epoch}_all_qd_cos_score.tsv', 'w') as f:
-        #     cosine_scores = query_embeddings @ sub_corpus_embeddings.T  # [len(queries), len(corpus)]
-        #     for i in range(cosine_scores.shape[0]):
-        #         for j in range(cosine_scores.shape[1]):
-        #             if self.corpus_ids[j] in self.relevant_docs[self.queries_ids[i]]:
-        #                 f.write(f'{self.queries_ids[i]}\t{self.corpus_ids[j]}\t{cosine_scores[i][j].item()}\t1\n')
-        #             else:
-        #                 f.write(f'{self.queries_ids[i]}\t{self.corpus_ids[j]}\t{cosine_scores[i][j].item()}\t0\n')
 
         return scores
 

@@ -37,7 +37,10 @@ if __name__ == '__main__':
     # model = SentenceTransformer(args.model_name)
     model = MySentenceTransformer(args.model_name)
     # retriever = TrainRetriever(model=model, batch_size=args.batch_size)
-    retriever = FaissTrainAndEvalRetriever(model=model, batch_size=args.batch_size)
+    if args.hard_negative_sample == 'ance':
+        retriever = FaissTrainAndEvalRetriever(model=model, batch_size=args.batch_size, save_corpus_emb=True)
+    else:
+        retriever = FaissTrainAndEvalRetriever(model=model, batch_size=args.batch_size)
 
 
     # Load training data

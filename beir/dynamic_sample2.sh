@@ -7,9 +7,9 @@ num_epochs=$5
 
 # train first epoch
 echo -e "\n\ntraining 1 epoch...\n"
-cd hard_negative_sampler/${sampler}/
-python ${sampler}.py -trd ${dataset} -m ${model}
-cd ../../
+cd hard_negative_sampler/dynamic/${sampler}/
+python ${sampler}.py -trd ${dataset} -m ${model} -warmup True
+cd ../../../
 python main.py \
     -trd ${dataset}_train \
     -ted ${dataset}_test \
@@ -22,9 +22,9 @@ python main.py \
 for ((i=2; i<=${num_epochs}; i++))
 do
     echo -e "\n\ntraining $i epoch...\n"
-    cd hard_negative_sampler/${sampler}/
-    python ${sampler}.py -trd ${dataset} -m ../../output/${dataset}_${sampler}5_${model//\//-}_${loss}_1epochs/
-    cd ../../
+    cd hard_negative_sampler/dynamic/${sampler}/
+    python ${sampler}.py -trd ${dataset} -m ../../../output/${dataset}_${sampler}5_${model//\//-}_${loss}_1epochs/
+    cd ../../../
     python main.py \
         -trd ${dataset}_train \
         -ted ${dataset}_test \
