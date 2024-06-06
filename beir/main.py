@@ -155,14 +155,14 @@ if __name__ == '__main__':
                       evaluation_steps=evaluation_steps,
                       use_amp=True)
 
-        # read eval csv and return result
-        result = pd.read_csv(f'{model_save_path}/eval/Information-Retrieval_evaluation_eval_results.csv')
-        best_row = result[result['cos_sim-NDCG@10'] == result['cos_sim-NDCG@10'].max()]
-        print("\nFinish training. The best result:")
-        for row in best_row.itertuples(index=False, name=None):
-            for col_name, value in zip(best_row.columns, row):
-                print(f"{col_name: <24}{round(value, 4)}")
-        print("\n")
+        if num_epochs > 1:
+            # read eval csv and return result
+            result = pd.read_csv(f'{model_save_path}/eval/Information-Retrieval_evaluation_eval_results.csv')
+            best_row = result[result['cos_sim-NDCG@10'] == result['cos_sim-NDCG@10'].max()]
+            print("\nFinish training. The best result:")
+            for row in best_row.itertuples(index=False, name=None):
+                for col_name, value in zip(best_row.columns, row):
+                    print(f"{col_name: <24}{round(value, 4)}")
+            print("\n")
 
 
-    # if dynamic is true

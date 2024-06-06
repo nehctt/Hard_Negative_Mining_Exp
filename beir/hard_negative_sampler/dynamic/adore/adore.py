@@ -19,7 +19,6 @@ def faiss_topk(query_embeddings, sub_corpus_embeddings, k):
 
 
 if __name__ == '__main__':
-
     # Arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_dataset", "-trd", default="nfcorpus", type=str)
@@ -27,7 +26,7 @@ if __name__ == '__main__':
     parser.add_argument("--warmup", "-warmup", default=False, type=bool)
     parser.add_argument("--num_negative_samples", "-n", default=5, type=int)
     args = parser.parse_args()
-    print(f'use {args.model_name} to get ANCE hard negative sample on {args.train_dataset}')
+    print(f'get ADORE hard negative sample on {args.train_dataset}')
 
     # Download nfcorpus.zip dataset and unzip the dataset
     dataset = args.train_dataset
@@ -40,6 +39,14 @@ if __name__ == '__main__':
     model = SentenceTransformer(args.model_name)
 
     # if first epoch, we have to save corpus emb first
+    if 'e5-small' in args.model_name:
+        model_path = 'intfloat-e5-small'
+    if 'mean-tokens' in args.model_name:
+        model_path = 'bert-base-nli-stsb-mean-tokens'
+    if 'uncased' in args.model_name:
+        model_path = 'bert-base-uncased'
+
+    corpus_emb_path = f"../corpus_embeddings_e0/{dataset}/{model_path}/corpus_embs.tsv"
     if args.warmup:
         corpus_ids = list(corpus.keys())
         corpus_texts = [corpus[cid]["title"] + " " + corpus[cid]["text"] for cid in corpus_ids]
@@ -48,7 +55,6 @@ if __name__ == '__main__':
             corpus_end_idx = min(corpus_start_idx + chunksize, len(corpus))
             sub_corpus_embeddings = model.encode(corpus_texts[corpus_start_idx:corpus_end_idx], convert_to_tensor=True)
 
-            corpus_emb_path = f"../corpus_embeddings_e0/{dataset}/{args.model_name.replace('/', '-')}/corpus_embs.tsv"
             Path(corpus_emb_path).parent.mkdir(parents=True, exist_ok=True)
             if corpus_start_idx==0:
                 f_corpus_emb = open(corpus_emb_path, 'w')
@@ -77,10 +83,7 @@ if __name__ == '__main__':
     print(f'The number of corpus: {len(corpus)}')
 
     # Read corpus embeddings and get top-k hard negative
-    if args.warmup:
-        file_path = corpus_emb_path
-    else:
-        file_path = f'./corpus_embeddings/corpus_embs.tsv'
+    file_path = corpus_emb_path
 
     chunksize = 100000
     result_list = [[] for _ in range(len(pos_doc_embeddings))]
@@ -140,10 +143,10 @@ if __name__ == '__main__':
             triplets.append((query_text, pos_text, neg_text))
 
     # print(triplets[:5])
-    print(f'There are total {len(triplets)} ANCE hard negative training triplets')
+    print(f'There are total {len(triplets)} ADORE hard negative training triplets')
 
     ### Save training triplets
-    save_path = f'../../../datasets/{dataset}-hns/ance_{args.num_negative_samples}.jsonl'
+    save_path = f'../../../datasets/{dataset}-hns/adore_{args.num_negative_samples}.jsonl'
     Path(save_path).parent.mkdir(parents=True, exist_ok=True)
     with open(save_path, 'w') as file:
         for item in triplets:
