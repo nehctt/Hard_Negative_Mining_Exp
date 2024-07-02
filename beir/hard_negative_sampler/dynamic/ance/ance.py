@@ -32,7 +32,7 @@ if __name__ == '__main__':
     # Download nfcorpus.zip dataset and unzip the dataset
     dataset = args.train_dataset
     url = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{}.zip".format(dataset)
-    out_dir = "../../datasets/"
+    out_dir = "../../../datasets/"
     data_path = util.download_and_unzip(url, out_dir)
     corpus, queries, qrels = GenericDataLoader(data_path).load(split="train")
 
@@ -41,21 +41,24 @@ if __name__ == '__main__':
 
     # if first epoch, we have to save corpus emb first
     if args.warmup:
-        corpus_ids = list(corpus.keys())
-        corpus_texts = [corpus[cid]["title"] + " " + corpus[cid]["text"] for cid in corpus_ids]
-        chunksize = 100000
-        for corpus_start_idx in tqdm(range(0, len(corpus), chunksize), desc='Encoding Corpus'):
-            corpus_end_idx = min(corpus_start_idx + chunksize, len(corpus))
-            sub_corpus_embeddings = model.encode(corpus_texts[corpus_start_idx:corpus_end_idx], convert_to_tensor=True)
-
-            corpus_emb_path = f"../corpus_embeddings_e0/{dataset}/{args.model_name.replace('/', '-')}/corpus_embs.tsv"
+        corpus_emb_path = f"../corpus_embeddings_e0/{dataset}/{args.model_name.replace('/', '-')}/corpus_embs.tsv"
+        if Path(corpus_emb_path).exists():
+            pass
+        else:
             Path(corpus_emb_path).parent.mkdir(parents=True, exist_ok=True)
-            if corpus_start_idx==0:
-                f_corpus_emb = open(corpus_emb_path, 'w')
-            else:
-                f_corpus_emb = open(corpus_emb_path, 'a')
-            for sub_corpus_id, emb in zip(corpus_ids[corpus_start_idx:corpus_end_idx], sub_corpus_embeddings):
-                f_corpus_emb.write(f'{sub_corpus_id}\t{emb.tolist()}\n')
+            corpus_ids = list(corpus.keys())
+            corpus_texts = [corpus[cid]["title"] + " " + corpus[cid]["text"] for cid in corpus_ids]
+            chunksize = 100000
+            for corpus_start_idx in tqdm(range(0, len(corpus), chunksize), desc='Encoding Corpus'):
+                corpus_end_idx = min(corpus_start_idx + chunksize, len(corpus))
+                sub_corpus_embs = model.encode(corpus_texts[corpus_start_idx:corpus_end_idx], convert_to_tensor=True)
+
+                if corpus_start_idx==0:
+                    f_corpus_emb = open(corpus_emb_path, 'w')
+                else:
+                    f_corpus_emb = open(corpus_emb_path, 'a')
+                for sub_corpus_id, emb in zip(corpus_ids[corpus_start_idx:corpus_end_idx], sub_corpus_embs):
+                    f_corpus_emb.write(f'{sub_corpus_id}\t{emb.tolist()}\n')
 
     # Prepare dataset texts
     queries_ids = list(queries.keys())
@@ -94,7 +97,7 @@ if __name__ == '__main__':
 
             if len(sub_corpus_ids) >= chunksize:
                 # get top-k ANCE hard negative
-                topk_scores, topk_ids = faiss_topk(pos_doc_embeddings.cpu(), torch.tensor(sub_corpus_embs).cpu(), 100)
+                topk_scores, topk_ids = faiss_topk(pos_doc_embeddings.cpu(), torch.tensor(sub_corpus_embs).cpu(), 30)
                 # print(topk_scores, topk_ids)
 
                 for pos_doc_itr in range(len(pos_doc_embeddings)):
@@ -108,7 +111,7 @@ if __name__ == '__main__':
         if len(sub_corpus_ids) > 0:
             # print('last chunk')
             # get top-k ANCE hard negative
-            topk_scores, topk_ids = faiss_topk(pos_doc_embeddings.cpu(), torch.tensor(sub_corpus_embs).cpu(), 100)
+            topk_scores, topk_ids = faiss_topk(pos_doc_embeddings.cpu(), torch.tensor(sub_corpus_embs).cpu(), 30)
             # print(topk_scores, topk_ids)
 
             for pos_doc_itr in range(len(pos_doc_embeddings)):
@@ -123,7 +126,7 @@ if __name__ == '__main__':
         pos_text = pos_doc_texts[query_itr]
 
         # Sort scores
-        top_hits = sorted(result_list[query_itr], key=lambda x: x['score'], reverse=True)[:100]
+        top_hits = sorted(result_list[query_itr], key=lambda x: x['score'], reverse=True)[:30]
         neg_ids = []
         for result in top_hits:
             neg_id = result['corpus_id']
