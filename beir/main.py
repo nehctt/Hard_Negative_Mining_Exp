@@ -3,7 +3,8 @@ from loss import MixupMultipleNegativesRankingLoss, InfoNCELoss, BCELoss, DCLLos
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 # from beir.retrieval.train import TrainRetriever
-from utils import FaissTrainAndEvalRetriever, MySentenceTransformer
+from utils import FaissTrainAndEvalRetriever
+from utils import MySentenceTransformer
 import pathlib
 import os
 import json

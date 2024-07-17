@@ -349,6 +349,7 @@ class MySentenceTransformer(SentenceTransformer):
 
         global_step = 0
         data_iterators = [iter(dataloader) for dataloader in dataloaders]
+        steps_each_dataloader = [len(dataloader) for dataloader in dataloaders]
 
         num_train_objectives = len(train_objectives)
 
@@ -365,8 +366,10 @@ class MySentenceTransformer(SentenceTransformer):
                 data_iterator = iter(dataloaders[train_idx])
                 data_iterators[train_idx] = data_iterator
 
-            for _ in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
+            for step in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
                 for train_idx in range(num_train_objectives):
+                    if (steps_per_epoch - steps_each_dataloader[train_idx]) > step:
+                        continue
                     loss_model = loss_models[train_idx]
                     optimizer = optimizers[train_idx]
                     scheduler = schedulers[train_idx]
@@ -376,10 +379,6 @@ class MySentenceTransformer(SentenceTransformer):
                         data = next(data_iterator)
                     except StopIteration:
                         continue
-                        # modify for multi-task learning
-                        # data_iterator = iter(dataloaders[train_idx])
-                        # data_iterators[train_idx] = data_iterator
-                        # data = next(data_iterator)
 
                     features, labels = data
                     labels = labels.to(self._target_device)
