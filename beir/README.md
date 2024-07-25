@@ -14,6 +14,9 @@ python main.py -trd scifact_test -ted scifact_test -m intfloat/e5-small -e 0
 ```
 bash run_ours.sh scifact intfloat/e5-small 10
 ```
+In this script, we do
+1. select random negative samples for **SciFact** dataset
+2. finetune **intfloat/e5-small** model with our method **InfoNCEDynamicMarginLoss** (loss.py L:22)
 
 ## Run through all the hard negative selection methohds
 ```
